@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	//	"github.com/Serux/chirpy/internal/auth"
 	"github.com/Serux/chirpy/internal/database"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -19,6 +20,14 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	queries        *database.Queries
+}
+
+type fullChirpJson struct {
+	Id        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Body      string `json:"body"`
+	UserId    string `json:"user_id"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -92,15 +101,6 @@ func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) 
 
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
-
-type fullChirpJson struct {
-	Id        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-	Body      string `json:"body"`
-	UserId    string `json:"user_id"`
-}
-
 func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
 		Body   string `json:"body"`
@@ -137,7 +137,6 @@ func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request)
 
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
-
 func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) {
 
 	chirp, err := cfg.queries.SelectAllChirps(r.Context())
@@ -160,7 +159,6 @@ func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) 
 
 	respondWithJSON(rw, http.StatusOK, ret)
 }
-
 func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
 
 	uid, err := uuid.Parse(r.PathValue("chirpID"))
@@ -231,7 +229,6 @@ func healthzHandler(rw http.ResponseWriter, _ *http.Request) {
 	rw.WriteHeader(http.StatusOK)
 	rw.Write([]byte(http.StatusText(http.StatusOK)))
 }
-
 func validateChirpHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
 		Body string `json:"body"`
@@ -258,7 +255,6 @@ func validateChirpHandler(rw http.ResponseWriter, r *http.Request) {
 	respondWithJSON(rw, http.StatusOK, responseJson{CleanedBody: newBody})
 
 }
-
 func removeProfanity(chirp string) string {
 	profanes := []string{"kerfuffle", "sharbert", "fornax"}
 	words := strings.Fields(chirp)
@@ -271,7 +267,6 @@ func removeProfanity(chirp string) string {
 	}
 	return strings.Join(words, " ")
 }
-
 func respondWithError(rw http.ResponseWriter, code int, msg string) {
 	type errorJson struct {
 		Error string `json:"error"`
@@ -280,7 +275,6 @@ func respondWithError(rw http.ResponseWriter, code int, msg string) {
 	rw.WriteHeader(code)
 	rw.Write(errJ)
 }
-
 func respondWithJSON(rw http.ResponseWriter, code int, payload interface{}) {
 	retJ, _ := json.Marshal(payload)
 	rw.WriteHeader(code)
