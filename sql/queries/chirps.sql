@@ -9,6 +9,9 @@ VALUES (
 )
 RETURNING *;
 
+-- name: SelectAllChirps :many
+Select * FROM chirps ORDER BY chirps.created_at;
+
 -- name: DeleteAllChirps :exec
 
 DELETE FROM chirps;
