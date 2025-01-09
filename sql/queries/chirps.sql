@@ -12,6 +12,9 @@ RETURNING *;
 -- name: SelectAllChirps :many
 Select * FROM chirps ORDER BY chirps.created_at;
 
+-- name: SelectOneChirps :one
+Select * FROM chirps WHERE chirps.id = $1;
+
 -- name: DeleteAllChirps :exec
 
 DELETE FROM chirps;

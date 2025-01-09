@@ -161,6 +161,32 @@ func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) 
 	respondWithJSON(rw, http.StatusOK, ret)
 }
 
+func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
+
+	uid, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		fmt.Println(err)
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong parsing UID")
+		return
+	}
+
+	ch, err := cfg.queries.SelectOneChirps(r.Context(), uid)
+	if err != nil {
+		respondWithError(rw, http.StatusNotFound, "Chirp not found")
+		return
+	}
+
+	ret := fullChirpJson{
+		Id:        ch.ID.String(),
+		CreatedAt: ch.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: ch.UpdatedAt.Format(time.RFC3339),
+		Body:      ch.Body,
+		UserId:    ch.UserID.String(),
+	}
+
+	respondWithJSON(rw, http.StatusOK, ret)
+}
+
 func main() {
 	fmt.Println("Start Server")
 	godotenv.Load()
@@ -189,6 +215,7 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiConf.postUsersHandler)
 	mux.HandleFunc("POST /api/chirps", apiConf.postChirpsHandler)
 	mux.HandleFunc("GET /api/chirps", apiConf.getChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConf.getChirpHandler)
 
 	//ADMIN
 	mux.HandleFunc("GET /admin/metrics", apiConf.metricsHandler)
@@ -210,7 +237,7 @@ func validateChirpHandler(rw http.ResponseWriter, r *http.Request) {
 		Body string `json:"body"`
 	}
 	type responseJson struct {
-		CleanedBody string `json:"cleaned_Body"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
