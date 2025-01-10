@@ -1,2 +1,1 @@
-cd ../
 sqlc generate

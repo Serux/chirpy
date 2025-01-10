@@ -11,6 +11,7 @@ import (
 	"time"
 
 	//	"github.com/Serux/chirpy/internal/auth"
+	"github.com/Serux/chirpy/internal/auth"
 	"github.com/Serux/chirpy/internal/database"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -22,12 +23,19 @@ type apiConfig struct {
 	queries        *database.Queries
 }
 
-type fullChirpJson struct {
+type fullChirpJsonDb struct {
 	Id        string `json:"id"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Body      string `json:"body"`
 	UserId    string `json:"user_id"`
+}
+
+type userMailJsonDb struct {
+	Id        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Email     string `json:"email"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -70,13 +78,8 @@ func (cfg *apiConfig) resetHandler(rw http.ResponseWriter, r *http.Request) {
 }
 func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
-		Email string `json:"email"`
-	}
-	type responseJson struct {
-		Id        string `json:"id"`
-		CreatedAt string `json:"created_at"`
-		UpdatedAt string `json:"updated_at"`
-		Email     string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -88,16 +91,18 @@ func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := cfg.queries.CreateUser(r.Context(), params.Email)
+	user, err := cfg.queries.CreateUser(r.Context(), database.CreateUserParams{Email: params.Email, HashedPassword: params.Password})
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
 		return
 	}
 
-	ret := responseJson{Id: user.ID.String(),
+	ret := userMailJsonDb{
+		Id:        user.ID.String(),
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email}
+		Email:     user.Email,
+	}
 
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
@@ -127,7 +132,7 @@ func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ret := fullChirpJson{
+	ret := fullChirpJsonDb{
 		Id:        chirp.ID.String(),
 		CreatedAt: chirp.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: chirp.UpdatedAt.Format(time.RFC3339),
@@ -145,10 +150,10 @@ func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ret := []fullChirpJson{}
+	ret := []fullChirpJsonDb{}
 
 	for _, ch := range chirp {
-		ret = append(ret, fullChirpJson{
+		ret = append(ret, fullChirpJsonDb{
 			Id:        ch.ID.String(),
 			CreatedAt: ch.CreatedAt.Format(time.RFC3339),
 			UpdatedAt: ch.UpdatedAt.Format(time.RFC3339),
@@ -174,12 +179,49 @@ func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ret := fullChirpJson{
+	ret := fullChirpJsonDb{
 		Id:        ch.ID.String(),
 		CreatedAt: ch.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: ch.UpdatedAt.Format(time.RFC3339),
 		Body:      ch.Body,
 		UserId:    ch.UserID.String(),
+	}
+
+	respondWithJSON(rw, http.StatusOK, ret)
+}
+
+func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
+	type requestJson struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestJson{}
+
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong decoding input")
+		return
+	}
+
+	user, err := cfg.queries.SelectUserByMail(r.Context(), params.Email)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	err = auth.CheckPasswordHash(params.Password, user.HashedPassword)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	ret := userMailJsonDb{
+		Id:        user.ID.String(),
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+		Email:     user.Email,
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
@@ -209,8 +251,10 @@ func main() {
 
 	//API
 	mux.HandleFunc("GET /api/healthz", healthzHandler)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
 	mux.HandleFunc("POST /api/users", apiConf.postUsersHandler)
+	mux.HandleFunc("POST /api/login", apiConf.loginHandler)
+
+	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
 	mux.HandleFunc("POST /api/chirps", apiConf.postChirpsHandler)
 	mux.HandleFunc("GET /api/chirps", apiConf.getChirpsHandler)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConf.getChirpHandler)
