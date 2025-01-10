@@ -1,0 +1,4 @@
+## 🤝 Contributing
+
+### Clone the repo
+
