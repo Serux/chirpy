@@ -95,3 +95,14 @@ func TestGetToken(t *testing.T) {
 	t.Log("GET TOKEN: ", s)
 
 }
+
+func TestMakeRefreshToken(t *testing.T) {
+	tkn, err := MakeRefreshToken()
+	if err != nil {
+		t.Log("Err: ", err)
+		return
+
+	}
+	t.Log("RToken: ", tkn)
+
+}

@@ -198,16 +198,16 @@ func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
-		Email            string `json:"email"`
-		Password         string `json:"password"`
-		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	type responseJson struct {
-		Id        string `json:"id"`
-		CreatedAt string `json:"created_at"`
-		UpdatedAt string `json:"updated_at"`
-		Email     string `json:"email"`
-		Token     string `json:"token"`
+		Id           string `json:"id"`
+		CreatedAt    string `json:"created_at"`
+		UpdatedAt    string `json:"updated_at"`
+		Email        string `json:"email"`
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -230,25 +230,87 @@ func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 		respondWithError(rw, http.StatusUnauthorized, "Incorrect email or password")
 		return
 	}
-	expires := time.Hour
-	if params.ExpiresInSeconds > 0 {
-		expires = time.Duration(time.Second.Seconds() * float64(params.ExpiresInSeconds))
-	}
 
+	expires := time.Hour
 	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expires)
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "Error creating JWT")
 		return
 	}
+
+	rtoken, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Error making rtoken"+err.Error())
+		return
+	}
+
+	_, err = cfg.queries.InsertRefreshToken(r.Context(), database.InsertRefreshTokenParams{Token: rtoken, UserID: user.ID})
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Error inserting token"+err.Error())
+		return
+	}
+
 	ret := responseJson{
-		Id:        user.ID.String(),
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email,
-		Token:     token,
+		Id:           user.ID.String(),
+		CreatedAt:    user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:    user.UpdatedAt.Format(time.RFC3339),
+		Email:        user.Email,
+		Token:        token,
+		RefreshToken: rtoken,
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
+}
+
+func (cfg *apiConfig) refreshHandler(rw http.ResponseWriter, r *http.Request) {
+
+	type responseJson struct {
+		Token string `json:"token"`
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil || token == "" {
+		respondWithError(rw, http.StatusUnauthorized, "Header without Bearer Token")
+		return
+	}
+
+	rt, err := cfg.queries.SelectRefreshToken(r.Context(), token)
+	if err != nil || token == "" {
+		respondWithError(rw, http.StatusUnauthorized, "No Refresh Token")
+		return
+	}
+	if rt.RevokedAt.Valid || time.Now().After(rt.ExpiresAt.Time) {
+		respondWithError(rw, http.StatusUnauthorized, "Token revoked or expired")
+		return
+	}
+
+	newtoken, err := auth.MakeJWT(rt.UserID, cfg.jwtSecret, time.Hour)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Error creating JWT")
+		return
+	}
+
+	ret := responseJson{
+		Token: newtoken,
+	}
+	respondWithJSON(rw, http.StatusOK, ret)
+}
+
+func (cfg *apiConfig) revokeHandler(rw http.ResponseWriter, r *http.Request) {
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil || token == "" {
+		respondWithError(rw, http.StatusUnauthorized, "Header without Bearer Token")
+		return
+	}
+
+	err = cfg.queries.RevokeRefreshToken(r.Context(), token)
+	if err != nil || token == "" {
+		respondWithError(rw, http.StatusUnauthorized, "No Refresh Token")
+		return
+	}
+
+	respondWithJSON(rw, 204, nil)
 }
 
 func main() {
@@ -280,6 +342,8 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", healthzHandler)
 	mux.HandleFunc("POST /api/users", apiConf.postUsersHandler)
 	mux.HandleFunc("POST /api/login", apiConf.loginHandler)
+	mux.HandleFunc("POST /api/refresh", apiConf.refreshHandler)
+	mux.HandleFunc("POST /api/revoke", apiConf.revokeHandler)
 
 	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
 	mux.HandleFunc("POST /api/chirps", apiConf.postChirpsHandler)
