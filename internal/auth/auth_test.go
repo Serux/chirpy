@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -67,5 +68,30 @@ func TestValidateJWTExpired(t *testing.T) {
 		return
 	}
 	t.Log("Recovered UID: ", uid)
+
+}
+
+func TestGetToken(t *testing.T) {
+	newuid := uuid.New()
+
+	token, err := MakeJWT(newuid, "Secret", -time.Hour)
+	if err != nil {
+		t.Log(err)
+		return
+	}
+
+	/*uid, err := ValidateJWT(token, "Secret")
+	if err != nil {
+		t.Log(err)
+		return
+	}*/
+
+	h := http.Header{}
+	h.Add("Authorization", "Bearer "+token)
+
+	s, _ := GetBearerToken(h)
+
+	t.Log("Original TOKEN: ", token)
+	t.Log("GET TOKEN: ", s)
 
 }
