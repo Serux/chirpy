@@ -20,6 +20,7 @@ import (
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	jwtSecret      string
 	queries        *database.Queries
 }
 
@@ -108,25 +109,30 @@ func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) 
 }
 func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
-		Body   string `json:"body"`
-		UserId string `json:"user_id"`
+		Body string `json:"body"`
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong geting JWT")
+		return
+	}
+	uidtok, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong validating JWT")
+		return
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := requestJson{}
 
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "Something went wrong decoding input")
 		return
 	}
-	uid, err := uuid.Parse(params.UserId)
 
-	if err != nil {
-		respondWithError(rw, http.StatusInternalServerError, "User is not UUID")
-		return
-	}
-	chirp, err := cfg.queries.CreateChirp(r.Context(), database.CreateChirpParams{Body: params.Body, UserID: uid})
+	chirp, err := cfg.queries.CreateChirp(r.Context(), database.CreateChirpParams{Body: params.Body, UserID: uidtok})
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
 		return
@@ -192,8 +198,16 @@ func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
+	}
+	type responseJson struct {
+		Id        string `json:"id"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+		Email     string `json:"email"`
+		Token     string `json:"token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -216,12 +230,22 @@ func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 		respondWithError(rw, http.StatusUnauthorized, "Incorrect email or password")
 		return
 	}
+	expires := time.Hour
+	if params.ExpiresInSeconds > 0 {
+		expires = time.Duration(time.Second.Seconds() * float64(params.ExpiresInSeconds))
+	}
 
-	ret := userMailJsonDb{
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expires)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Error creating JWT")
+		return
+	}
+	ret := responseJson{
 		Id:        user.ID.String(),
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 		Email:     user.Email,
+		Token:     token,
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
@@ -231,6 +255,8 @@ func main() {
 	fmt.Println("Start Server")
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	jwtSecret := os.Getenv("JWTSECRET")
+
 	fmt.Println("Load ENV")
 
 	db, err := sql.Open("postgres", dbURL)
@@ -244,6 +270,7 @@ func main() {
 	apiConf := apiConfig{}
 
 	apiConf.queries = dbQueries
+	apiConf.jwtSecret = jwtSecret
 
 	//APP FILESERVER
 	appFileServerHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
