@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -198,12 +199,16 @@ func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request)
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
 func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) {
-	val := r.URL.Query()
+	query := r.URL.Query()
 	var chirp []database.Chirp
 	var err error
+	sortString := "asc"
+	if query.Has("sort") {
+		sortString = query.Get("sort")
+	}
 
-	if val.Has("author_id") {
-		chirp, err = cfg.queries.SelectAllChirpsUser(r.Context(), uuid.MustParse(val.Get("author_id")))
+	if query.Has("author_id") {
+		chirp, err = cfg.queries.SelectAllChirpsUser(r.Context(), uuid.MustParse(query.Get("author_id")))
 		if err != nil {
 			respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
 			return
@@ -217,7 +222,17 @@ func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) 
 	}
 
 	ret := []fullChirpJsonDb{}
-
+	//ret2:= slices.SortedFunc(ret,func(fcjd1, fcjd2 fullChirpJsonDb) int {strings.Compare(fcjd1.CreatedAt, fcjd2.CreatedAt)})
+	//chirp2 := slices.SortedFunc[database.Chirp](chirp,func(c1, c2 database.Chirp) int {})
+	var sortfun func(i, j int) bool
+	fmt.Println(sortString)
+	if sortString == "asc" {
+		sortfun = func(i, j int) bool { return chirp[i].CreatedAt.Compare(chirp[j].CreatedAt) < 0 }
+	} else {
+		sortfun = func(i, j int) bool { return chirp[i].CreatedAt.Compare(chirp[j].CreatedAt) > 0 }
+	}
+	sort.Slice(chirp, sortfun)
+	//slices.SortFunc(chirp,sortfun)
 	for _, ch := range chirp {
 		ret = append(ret, fullChirpJsonDb{
 			Id:        ch.ID.String(),
