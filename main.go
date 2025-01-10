@@ -33,10 +33,11 @@ type fullChirpJsonDb struct {
 }
 
 type userMailJsonDb struct {
-	Id        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-	Email     string `json:"email"`
+	Id          string `json:"id"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	Email       string `json:"email"`
+	IsChirpyRed bool   `json:"is_chirpy_red"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -77,6 +78,7 @@ func (cfg *apiConfig) resetHandler(rw http.ResponseWriter, r *http.Request) {
 	val := "Hits Reset."
 	rw.Write([]byte(val))
 }
+
 func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
 		Email    string `json:"email"`
@@ -99,10 +101,11 @@ func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) 
 	}
 
 	ret := userMailJsonDb{
-		Id:        user.ID.String(),
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email,
+		Id:          user.ID.String(),
+		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	respondWithJSON(rw, http.StatusCreated, ret)
@@ -142,10 +145,11 @@ func (cfg *apiConfig) putUsersHandler(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	ret := userMailJsonDb{
-		Id:        user.ID.String(),
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email,
+		Id:          user.ID.String(),
+		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
@@ -292,6 +296,7 @@ func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 		Email        string `json:"email"`
 		Token        string `json:"token"`
 		RefreshToken string `json:"refresh_token"`
+		IsChirpyRed  bool   `json:"is_chirpy_red"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -341,6 +346,7 @@ func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        token,
 		RefreshToken: rtoken,
+		IsChirpyRed:  user.IsChirpyRed,
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
@@ -397,6 +403,42 @@ func (cfg *apiConfig) revokeHandler(rw http.ResponseWriter, r *http.Request) {
 	respondWithJSON(rw, 204, nil)
 }
 
+func (cfg *apiConfig) postpolkaHookHandler(rw http.ResponseWriter, r *http.Request) {
+	type requestJson struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserId string `json:"user_id"`
+		} `json:"data"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestJson{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong decoding input")
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		respondWithError(rw, 204, "Is not UPGRADE")
+		return
+	}
+
+	uid, err := uuid.Parse(params.Data.UserId)
+	if err != nil {
+		respondWithError(rw, http.StatusNotFound, "Cannot parse UUID")
+		return
+	}
+	user, err := cfg.queries.UpdateToRedUserByUUID(r.Context(), uid)
+	emptyuser := database.User{}
+	if err != nil || user == emptyuser {
+		respondWithError(rw, http.StatusNotFound, "USER NOT FOUND")
+		return
+	}
+
+	respondWithJSON(rw, 204, nil)
+}
+
 func main() {
 	fmt.Println("Start Server")
 	godotenv.Load()
@@ -436,6 +478,8 @@ func main() {
 	mux.HandleFunc("GET /api/chirps", apiConf.getChirpsHandler)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConf.getChirpHandler)
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiConf.deleteChirpHandler)
+
+	mux.HandleFunc("POST /api/polka/webhooks", apiConf.postpolkaHookHandler)
 
 	//ADMIN
 	mux.HandleFunc("GET /admin/metrics", apiConf.metricsHandler)
