@@ -42,7 +42,6 @@ func (q *Queries) CreateChirp(ctx context.Context, arg CreateChirpParams) (Chirp
 }
 
 const deleteAllChirps = `-- name: DeleteAllChirps :exec
-
 DELETE FROM chirps
 `
 
@@ -51,8 +50,24 @@ func (q *Queries) DeleteAllChirps(ctx context.Context) error {
 	return err
 }
 
+const deleteByIdChirps = `-- name: DeleteByIdChirps :exec
+DELETE FROM chirps
+WHERE chirps.id = $1
+AND chirps.user_id = $2
+`
+
+type DeleteByIdChirpsParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) DeleteByIdChirps(ctx context.Context, arg DeleteByIdChirpsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteByIdChirps, arg.ID, arg.UserID)
+	return err
+}
+
 const selectAllChirps = `-- name: SelectAllChirps :many
-Select id, created_at, updated_at, body, user_id FROM chirps ORDER BY chirps.created_at
+SELECT id, created_at, updated_at, body, user_id FROM chirps ORDER BY chirps.created_at
 `
 
 func (q *Queries) SelectAllChirps(ctx context.Context) ([]Chirp, error) {
@@ -85,7 +100,7 @@ func (q *Queries) SelectAllChirps(ctx context.Context) ([]Chirp, error) {
 }
 
 const selectOneChirps = `-- name: SelectOneChirps :one
-Select id, created_at, updated_at, body, user_id FROM chirps WHERE chirps.id = $1
+SELECT id, created_at, updated_at, body, user_id FROM chirps WHERE chirps.id = $1
 `
 
 func (q *Queries) SelectOneChirps(ctx context.Context, id uuid.UUID) (Chirp, error) {

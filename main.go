@@ -107,6 +107,50 @@ func (cfg *apiConfig) postUsersHandler(rw http.ResponseWriter, r *http.Request) 
 
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
+
+func (cfg *apiConfig) putUsersHandler(rw http.ResponseWriter, r *http.Request) {
+	type requestJson struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong geting JWT")
+		return
+	}
+	uidtok, err := auth.ValidateJWT(token, cfg.jwtSecret)
+
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong validating JWT")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestJson{}
+
+	err = decoder.Decode(&params)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong decoding input")
+		return
+	}
+
+	user, err := cfg.queries.UpdateUserMailPassByUUID(r.Context(), database.UpdateUserMailPassByUUIDParams{Email: params.Email, HashedPassword: params.Password, ID: uidtok})
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
+		return
+	}
+
+	ret := userMailJsonDb{
+		Id:        user.ID.String(),
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+		Email:     user.Email,
+	}
+
+	respondWithJSON(rw, http.StatusOK, ret)
+}
+
 func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request) {
 	type requestJson struct {
 		Body string `json:"body"`
@@ -194,6 +238,46 @@ func (cfg *apiConfig) getChirpHandler(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(rw, http.StatusOK, ret)
+}
+
+func (cfg *apiConfig) deleteChirpHandler(rw http.ResponseWriter, r *http.Request) {
+
+	uid, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		fmt.Println(err)
+		respondWithError(rw, http.StatusInternalServerError, "Something went wrong parsing UID")
+		return
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong geting JWT")
+		return
+	}
+	uidtok, err := auth.ValidateJWT(token, cfg.jwtSecret)
+
+	if err != nil {
+		respondWithError(rw, http.StatusUnauthorized, "Something went wrong validating JWT")
+		return
+	}
+
+	ch, err := cfg.queries.SelectOneChirps(r.Context(), uid)
+	if err != nil {
+		respondWithError(rw, http.StatusNotFound, "Chirp not found")
+		return
+	}
+	if ch.UserID != uidtok {
+		respondWithError(rw, 403, "NO AUTH")
+		return
+	}
+
+	err = cfg.queries.DeleteByIdChirps(r.Context(), database.DeleteByIdChirpsParams{ID: uid, UserID: uidtok})
+	if err != nil {
+		respondWithError(rw, 403, "Error deleting CHIRP")
+		return
+	}
+
+	respondWithJSON(rw, 204, nil)
 }
 
 func (cfg *apiConfig) loginHandler(rw http.ResponseWriter, r *http.Request) {
@@ -341,6 +425,8 @@ func main() {
 	//API
 	mux.HandleFunc("GET /api/healthz", healthzHandler)
 	mux.HandleFunc("POST /api/users", apiConf.postUsersHandler)
+	mux.HandleFunc("PUT /api/users", apiConf.putUsersHandler)
+
 	mux.HandleFunc("POST /api/login", apiConf.loginHandler)
 	mux.HandleFunc("POST /api/refresh", apiConf.refreshHandler)
 	mux.HandleFunc("POST /api/revoke", apiConf.revokeHandler)
@@ -349,6 +435,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiConf.postChirpsHandler)
 	mux.HandleFunc("GET /api/chirps", apiConf.getChirpsHandler)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiConf.getChirpHandler)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiConf.deleteChirpHandler)
 
 	//ADMIN
 	mux.HandleFunc("GET /admin/metrics", apiConf.metricsHandler)
