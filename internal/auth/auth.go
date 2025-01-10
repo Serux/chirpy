@@ -83,3 +83,15 @@ func MakeRefreshToken() (string, error) {
 	return str, nil
 
 }
+
+func GetAPIKey(headers http.Header) (string, error) {
+	auth := headers.Get("Authorization")
+	if len(auth) == 0 {
+		return "", fmt.Errorf("NO AUTH")
+	}
+	authFields := strings.Fields(auth)
+	if len(authFields) != 2 && authFields[0] != "ApiKey" {
+		return "", fmt.Errorf("WRONG AUTH")
+	}
+	return authFields[1], nil
+}

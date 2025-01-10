@@ -21,6 +21,7 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	jwtSecret      string
+	polkaKey       string
 	queries        *database.Queries
 }
 
@@ -411,9 +412,22 @@ func (cfg *apiConfig) postpolkaHookHandler(rw http.ResponseWriter, r *http.Reque
 		} `json:"data"`
 	}
 
+	apikey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(rw, 401, "Error getting APIKEY")
+		return
+	}
+	if apikey != cfg.polkaKey {
+		fmt.Println(apikey)
+		fmt.Println(cfg.polkaKey)
+
+		respondWithError(rw, 401, "APIKEY MISMATCH")
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	params := requestJson{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "Something went wrong decoding input")
 		return
@@ -444,6 +458,7 @@ func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	jwtSecret := os.Getenv("JWTSECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	fmt.Println("Load ENV")
 
@@ -459,6 +474,7 @@ func main() {
 
 	apiConf.queries = dbQueries
 	apiConf.jwtSecret = jwtSecret
+	apiConf.polkaKey = polkaKey
 
 	//APP FILESERVER
 	appFileServerHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
