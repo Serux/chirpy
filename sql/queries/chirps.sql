@@ -10,10 +10,17 @@ VALUES (
 RETURNING *;
 
 -- name: SelectAllChirps :many
-SELECT * FROM chirps ORDER BY chirps.created_at;
+SELECT * FROM chirps 
+ORDER BY chirps.created_at;
+
+-- name: SelectAllChirpsUser :many
+SELECT * FROM chirps 
+WHERE user_id = $1 
+ORDER BY chirps.created_at ASC;
 
 -- name: SelectOneChirps :one
-SELECT * FROM chirps WHERE chirps.id = $1;
+SELECT * FROM chirps 
+WHERE chirps.id = $1;
 
 -- name: DeleteByIdChirps :exec
 DELETE FROM chirps

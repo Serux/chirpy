@@ -67,7 +67,8 @@ func (q *Queries) DeleteByIdChirps(ctx context.Context, arg DeleteByIdChirpsPara
 }
 
 const selectAllChirps = `-- name: SelectAllChirps :many
-SELECT id, created_at, updated_at, body, user_id FROM chirps ORDER BY chirps.created_at
+SELECT id, created_at, updated_at, body, user_id FROM chirps 
+ORDER BY chirps.created_at
 `
 
 func (q *Queries) SelectAllChirps(ctx context.Context) ([]Chirp, error) {
@@ -99,8 +100,44 @@ func (q *Queries) SelectAllChirps(ctx context.Context) ([]Chirp, error) {
 	return items, nil
 }
 
+const selectAllChirpsUser = `-- name: SelectAllChirpsUser :many
+SELECT id, created_at, updated_at, body, user_id FROM chirps 
+WHERE user_id = $1 
+ORDER BY chirps.created_at ASC
+`
+
+func (q *Queries) SelectAllChirpsUser(ctx context.Context, userID uuid.UUID) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, selectAllChirpsUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chirp
+	for rows.Next() {
+		var i Chirp
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Body,
+			&i.UserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectOneChirps = `-- name: SelectOneChirps :one
-SELECT id, created_at, updated_at, body, user_id FROM chirps WHERE chirps.id = $1
+SELECT id, created_at, updated_at, body, user_id FROM chirps 
+WHERE chirps.id = $1
 `
 
 func (q *Queries) SelectOneChirps(ctx context.Context, id uuid.UUID) (Chirp, error) {

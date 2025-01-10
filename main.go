@@ -198,11 +198,22 @@ func (cfg *apiConfig) postChirpsHandler(rw http.ResponseWriter, r *http.Request)
 	respondWithJSON(rw, http.StatusCreated, ret)
 }
 func (cfg *apiConfig) getChirpsHandler(rw http.ResponseWriter, r *http.Request) {
+	val := r.URL.Query()
+	var chirp []database.Chirp
+	var err error
 
-	chirp, err := cfg.queries.SelectAllChirps(r.Context())
-	if err != nil {
-		respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
-		return
+	if val.Has("author_id") {
+		chirp, err = cfg.queries.SelectAllChirpsUser(r.Context(), uuid.MustParse(val.Get("author_id")))
+		if err != nil {
+			respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
+			return
+		}
+	} else {
+		chirp, err = cfg.queries.SelectAllChirps(r.Context())
+		if err != nil {
+			respondWithError(rw, http.StatusInternalServerError, "Something went wrong creating user")
+			return
+		}
 	}
 
 	ret := []fullChirpJsonDb{}
